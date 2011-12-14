@@ -7,23 +7,17 @@
 %%%-------------------------------------------------------------------
 -module(rebus).
 
--behaviour(gen_server).
-
-%% API
--export([start_link/0,
+%% Public API
+-export([start/0,
+	 stop/0,
+	 publish/1,
 	 publish/2]).
 
-%% gen_server callbacks
--export([init/1,
-	 handle_call/3,
-	 handle_cast/2,
-	 handle_info/2,
-	 terminate/2,
-	 code_change/3]).
+%% Private API
+-export([loop/1]).
 
--define(SERVER, ?MODULE).
-
--record(state, {}).
+-define(REBUS(Pid), put({?MODULE, pid}, Pid)).
+-define(REBUS, get({?MODULE, pid})).
 
 %%%===================================================================
 %%% API
@@ -31,63 +25,55 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Starts the server
+%% Starts the Rebus service.
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({global, ?SERVER}, ?MODULE, [], []).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Publish the given `message' on the specified `topic'.
-%% @end
-%%--------------------------------------------------------------------
-publish(Topic, Message) ->
-    gen_server:cast(?SERVER, {publish, Topic, Message}).
-
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-init([]) ->
-    {ok, #state{}}.
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-handle_cast({publish, Topic, Message}, State) ->
-    {noreply, State};
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+start() ->
+    ?REBUS(spawn(?MODULE, loop, [[]])),
     ok.
 
 %%--------------------------------------------------------------------
-%% @private
+%% @doc
+%% Stops the Rebus service.
+%% @end
 %%--------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+stop() ->
+    ?REBUS ! {stop, self()},
+    ok.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Publishes the given message on the fixed public topic `all', that
+%% all processes that use the module attribute `subscribes' will
+%% receive.
+%% @end
+%%--------------------------------------------------------------------
+publish(Message) ->
+    publish(all, Message).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Publishes the given message on the specified topic, received by
+%% processes that explicit declare this topic in their `subscribes'
+%% module attribute. Please note the exception that the the `all'
+%% topic is always published, to all processes using the `subscribes'
+%% attribute (even when it's empty).
+%% @end
+%%--------------------------------------------------------------------
+publish(Topic, Message) ->
+    ?REBUS ! {publish, Topic, Message},
+    ok.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+%% @private
+loop(State) ->
+    receive
+	{stop, From} ->
+	    From ! State;
+	Other ->
+	    error_logger:debug_report([{other_message, Other}, {state, State}]),
+	    loop(State)
+    end.
