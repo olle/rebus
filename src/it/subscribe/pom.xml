@@ -1,0 +1,26 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>@project.groupId@.it</groupId>
+  <artifactId>subscribe</artifactId>
+  <version>@project.version@</version>
+  <packaging>erlang-otp</packaging>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>eu.lindenbaum</groupId>
+        <artifactId>maven-erlang-plugin</artifactId>
+        <version>@maven-erlang-plugin.version@</version>
+        <extensions>true</extensions>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+    <dependency>
+      <groupId>@project.groupId@</groupId>
+      <artifactId>@project.artifactId@</artifactId>
+      <version>@project.version@</version>
+      <type>erlang-otp</type>
+    </dependency>
+  </dependencies>
+</project>
