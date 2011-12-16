@@ -11,13 +11,26 @@
 -export([start/0,
          stop/0,
          publish/1,
-         publish/2]).
+         publish/2,
+	 debug/0]).
 
 -define(SLEEP(Millis), receive after Millis -> ok end).
+
+-record(state, {subscribers :: [pid()],
+		monitor :: pid()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+debug() ->
+    ?MODULE ! {debug, self()},
+    receive
+	{ok, State} ->
+	    {ok, State}
+    after 100 ->
+	    {error, "No response"}
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -25,8 +38,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start() ->
-    Dispatching = dispatching(start),
-    _Monitoring = monitoring({start, Dispatching}),
+    register(?MODULE, spawn(fun rebus/0)),
     ok.
 
 %%--------------------------------------------------------------------
@@ -35,8 +47,7 @@ start() ->
 %% @end
 %%--------------------------------------------------------------------
 stop() ->
-    dispatching(stop),
-    monitoring(stop),
+    ?MODULE ! {stop, self()},
     ok.
 
 %%--------------------------------------------------------------------
@@ -59,8 +70,7 @@ publish(Message) ->
 %% @end
 %%--------------------------------------------------------------------
 publish(Topic, Message) ->
-    Pid = get(dispatch),
-    Pid ! {publish, Topic, Message}.
+    ?MODULE ! {publish, Topic, Message}.
 
 %%%===================================================================
 %%% Internal functions
@@ -69,69 +79,35 @@ publish(Topic, Message) ->
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
-dispatching(start) ->
-    Pid = spawn(fun dispatch/0),
-    put(dispatch, Pid),
-    Pid;
-
-dispatching(stop) ->
-    Pid = get(dispatch),
-    Pid ! {stop, self()},
-    receive
-        {stopping, _State} ->
-            erase(dispatch),
-            ok
-    after 123 ->
-            {error, "No response"}
-    end.
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-dispatch() ->
+rebus() ->
     process_flag(sensitive, true),
-    dispatch([]).
+    Pid = spawn_link(fun monitor/0),
+    rebus(#state{monitor = Pid, subscribers = []}).
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
-dispatch(State) ->
+rebus(State) ->
     receive
+	{debug, From} ->
+	    From ! {ok, State},
+	    rebus(State);
+
         {stop, From} ->
             From ! {stopping, State};
 
-        {add, Process} ->
-            error_logger:info_report([dispatch, {add, Process}, {state, State}]),
-            dispatch(State ++ Process);
-
         {publish, Topic, Message} ->
-            [catch P ! {Topic, Message} || P <- State],
-            dispatch(State);
-
+            [P ! {Topic, Message} || P <- State#state.subscribers],
+            rebus(State);
+	
+        {subscribe, Process} ->
+            error_logger:info_report([dispatch, {add, Process}, {state, State}]),
+	    Subscribers = State#state.subscribers,
+            rebus(#state{subscribers = [Process | Subscribers]});
+	
         Other ->
-            error_logger:info_report([dispatch, {message, Other}, {state, State}]),
-            dispatch(State)
-    end.
-
-%%--------------------------------------------------------------------
-%% @private
-%%--------------------------------------------------------------------
-monitoring({start, Dispatcher}) when is_pid(Dispatcher) ->
-    Pid = spawn(fun monitor/0),
-    put(monitor, Pid),
-    ?SLEEP(123),
-    Pid ! {dispatcher, Dispatcher},
-    Pid;
-
-monitoring(stop) ->
-    Pid = get(monitor),
-    Pid ! {stop, self()},
-    receive
-        {stopping, _State} ->
-            erase(monitor),
-            ok
-    after 123 ->
-            {error, "No response"}
+            error_logger:info_report([other, {message, Other}, {state, State}]),
+            rebus(State)
     end.
 
 %%--------------------------------------------------------------------
@@ -142,49 +118,42 @@ monitor() ->
     erlang:trace_pattern({'_', '_', '_'}, [{'_', [], []}], [local]),
     erlang:trace(all, true, [procs]),
     erlang:trace(self(), false, [procs]),
-    monitor([]),
-    ok.
+    monitor([]).
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
 monitor(State) ->
     receive
-        {stop, From} ->
-            From ! {stopping, State};
-
-        {dispatcher, Dispatcher} ->
-            monitor(Dispatcher);
-
-        {trace, _, spawn, Pid, _} ->
-            monitor_process(Pid, State),
+        Spawn = {trace, _, spawn, Pid, _} ->
+	    error_logger:info_report([{'SPAWN:', Spawn}]),
+            monitor_process(Pid),
             monitor(State);
-
-        _ ->
+	
+        Other ->
+	    error_logger:info_report([{'OTHER:', Other}]),
             monitor(State)
     end.
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
-monitor_process(Pid, Dispatcher) ->
+monitor_process(Pid) when is_pid(Pid) ->
     case erlang:process_info(Pid) of
         undefined ->
             ignore;
         
         Props ->
-            error_logger:info_report([{'PROPERTIES:', Props}]),
-            Tmp = proplists:get_value(current_function, Props),
-            error_logger:info_report([{'CURRENT_FUNCTION:', Tmp}]),
             {M, _F, _A} = proplists:get_value(current_function, Props, erlang),
-            error_logger:info_report([{'MODULE:', M}]),
             Attributes = M:module_info(attributes),
-            error_logger:info_report([{'ATTRIBUTES:', Attributes}]),
             case proplists:get_value(subscribes, Attributes) of
                 undefined ->
+		    error_logger:info_report([{subscribes, undefined}, {process, Pid}, {module, M}]),
                     ignore;
                 
-                _ ->
-                    Dispatcher ! {add, Pid}
+                Topics ->
+		    error_logger:info_report([{subscribes, Topics}, {process, Pid}, {module, M}]),
+                    ?MODULE ! {subscribe, Pid}
             end
     end.
+

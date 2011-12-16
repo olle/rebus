@@ -11,35 +11,26 @@
 
 -define(SLEEP(Time), receive after Time -> ok end).
 
--subscribes([foo, bar]).
-
 lifecycle_test() ->
     ?assertMatch(ok, rebus:start()),
 
-    A = spawn(fun a/0),
+    Foo = foo:start(),
+
+    %% ?SLEEP(100),
 
     rebus:publish(foo, message),
-    rebus:publish(bar, message),
-    rebus:publish(baz, message),
-    rebus:publish(message),
+    %% rebus:publish(bar, message),
+    %% rebus:publish(baz, message),
+    %% rebus:publish(message),
 
-    ?SLEEP(123),
+    %% ?SLEEP(100),
+    
+    %% A ! {stop, self()},
+    %% receive
+    %%     AState ->
+    %%         ?assertMatch([{all, message}, {foo, message}, {bar, message}], AState)
+    %% end,
 
-    A ! {stop, self()},
-    receive
-        AState ->
-            ?assertMatch([{all, message}, {foo, message}, {bar, message}], AState)
-    end,
-
+    ?assertMatch({ok, state}, foo:stop(Foo)),
+    
     ?assertMatch(ok, rebus:stop()).
-
-a() ->
-    a([]).
-
-a(State) ->
-    receive
-        stop ->
-            State;
-        Message ->
-            a([Message | State])
-    end.
