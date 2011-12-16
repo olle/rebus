@@ -15,25 +15,31 @@
 
 lifecycle_test() ->
     ?assertMatch(ok, rebus:start()),
-    
-    A = spawn(fun a/1),
+
+    A = spawn(fun a/0),
 
     rebus:publish(foo, message),
     rebus:publish(bar, message),
+    rebus:publish(baz, message),
     rebus:publish(message),
-    
+
+    ?SLEEP(123),
+
     A ! {stop, self()},
     receive
-	AState ->
-	    ?assertMatch([{all, message}, {foo, message}], AState)
+        AState ->
+            ?assertMatch([{all, message}, {foo, message}, {bar, message}], AState)
     end,
-    
+
     ?assertMatch(ok, rebus:stop()).
+
+a() ->
+    a([]).
 
 a(State) ->
     receive
-	stop ->
-	    State;
-	Message ->
-	    a([Message | State])
+        stop ->
+            State;
+        Message ->
+            a([Message | State])
     end.
