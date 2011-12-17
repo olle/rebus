@@ -12,12 +12,9 @@
          stop/0,
          publish/1,
          publish/2,
-	 debug/0]).
+         debug/0]).
 
 -define(SLEEP(Millis), receive after Millis -> ok end).
-
--record(state, {subscribers :: [pid()],
-		monitor :: pid()}).
 
 %%%===================================================================
 %%% API
@@ -26,10 +23,10 @@
 debug() ->
     ?MODULE ! {debug, self()},
     receive
-	{ok, State} ->
-	    {ok, State}
+        {ok, State} ->
+            {ok, State}
     after 100 ->
-	    {error, "No response"}
+            {error, "No response"}
     end.
 
 %%--------------------------------------------------------------------
@@ -39,6 +36,7 @@ debug() ->
 %%--------------------------------------------------------------------
 start() ->
     register(?MODULE, spawn(fun rebus/0)),
+    ?SLEEP(10), %% try to align monitor and dispatching processes
     ok.
 
 %%--------------------------------------------------------------------
@@ -52,21 +50,19 @@ stop() ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Publishes the given message on the fixed public topic `all', that
-%% all processes that use the module attribute `subscribes' will
-%% receive.
+%% Simply publishes the given `message' to all processes that are
+%% annotated with the module attribute `subscribes' and specified as
+%% an empty list.
 %% @end
 %%--------------------------------------------------------------------
 publish(Message) ->
-    publish(all, Message).
+    ?MODULE ! {publish, Message}.
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Publishes the given message on the specified topic, received by
-%% processes that explicit declare this topic in their `subscribes'
-%% module attribute. Please note the exception that the the `all'
-%% topic is always published, to all processes using the `subscribes'
-%% attribute (even when it's empty).
+%% Publishes the given message on the specified `topic' to processes
+%% that explicit declare this topic in their `subscribes' module
+%% attribute.
 %% @end
 %%--------------------------------------------------------------------
 publish(Topic, Message) ->
@@ -81,34 +77,91 @@ publish(Topic, Message) ->
 %%--------------------------------------------------------------------
 rebus() ->
     process_flag(sensitive, true),
-    Pid = spawn_link(fun monitor/0),
-    rebus(#state{monitor = Pid, subscribers = []}).
+    spawn_link(fun monitor/0),
+    rebus([{subscribers, []}, {subscriptions, []}]).
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
 rebus(State) ->
     receive
-	{debug, From} ->
-	    From ! {ok, State},
-	    rebus(State);
+        {debug, From} ->
+            error_logger:info_report([debug, {state, State}]),
+            From ! {ok, State},
+            rebus(State);
 
         {stop, From} ->
+            error_logger:info_report([stop, {state, State}]),
             From ! {stopping, State};
 
-        {publish, Topic, Message} ->
-            [P ! {Topic, Message} || P <- State#state.subscribers],
+        {publish, Message} ->
+            error_logger:info_report([publish, {message, Message}, {state, State}]),
+            Subscribers = proplists:get_value(subscribers, State, []),
+            [Subscriber ! Message || Subscriber <- Subscribers],
             rebus(State);
-	
-        {subscribe, Process} ->
-            error_logger:info_report([dispatch, {add, Process}, {state, State}]),
-	    Subscribers = State#state.subscribers,
-            rebus(#state{subscribers = [Process | Subscribers]});
-	
-        Other ->
-            error_logger:info_report([other, {message, Other}, {state, State}]),
+
+        {publish, Topic, Message} ->
+            error_logger:info_report([publish, {topic, Topic}, {message, Message}, {state, State}]),
+            Subscriptions = proplists:get_value(subscriptions, State, []),
+            Subscribers = proplists:get_value(Topic, Subscriptions, []),
+            [Subscriber ! {Topic, Message} || Subscriber <- Subscribers],
+            rebus(State);
+
+        {subscribe, Process, Topics} ->
+            error_logger:info_report([subscribe, {process, Process}, {topics, Topics}, {state, State}]),
+            NewState = add_subscriber(Process, Topics, State),
+            rebus(NewState);
+
+        _Other ->
+            %%error_logger:info_report([other, {message, Other}, {state, State}]),
             rebus(State)
     end.
+
+%%--------------------------------------------------------------------
+%% @private
+%%--------------------------------------------------------------------
+add_subscriber(Subscriber, Topics, State) ->
+    Subscribers = proplists:get_value(subscribers, State, []),
+    NewSubscribers = add_to_subscribers(Subscriber, Subscribers),
+
+    Subscriptions = proplists:get_value(subscriptions, State, []),
+    NewSubscriptions = add_to_subscriptions(Subscriber, Topics, Subscriptions),
+    [{subscribers, NewSubscribers}, {subscriptions, NewSubscriptions}].
+
+%%--------------------------------------------------------------------
+%% @private
+%%--------------------------------------------------------------------
+add_to_subscribers(Pid, Pids) ->
+    (Pids -- [Pid]) ++ [Pid].
+
+%%--------------------------------------------------------------------
+%% @private
+%%--------------------------------------------------------------------
+add_to_subscriptions(_Pid, [], Subscriptions) ->
+    Subscriptions;
+
+add_to_subscriptions(Pid, [Topic | Topics], Subscriptions) ->
+    NewSubscriptions = add_to_subscription(Pid, Topic, Subscriptions, []),
+    add_to_subscriptions(Pid, Topics, NewSubscriptions).
+
+%%--------------------------------------------------------------------
+%% @private
+%%--------------------------------------------------------------------
+add_to_subscription(Pid, Topic, [{Topic, Subscribers} | Subscriptions], Acc) ->    
+    NewSubscriptions = 
+        case proplists:get_value(Topic, Subscriptions) of
+            undefined ->
+                Subscriptions ++ [{Topic, [Pid]}];
+            
+            Subscribers ->
+                NewSubscription = TODO..... CONTIUNUE HERE....
+                Rest = proplists:remove
+        end,
+    
+    add_to_subscription(Pid, Topic, Subscriptions, Acc ++ [NewSubscription]);
+
+add_to_subscription(Pid, Topic, [Other | Subscriptions], Acc) ->
+    add_to_subscription(Pid, Topic, Subscriptions, [Other | Acc]).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -126,12 +179,11 @@ monitor() ->
 monitor(State) ->
     receive
         Spawn = {trace, _, spawn, Pid, _} ->
-	    error_logger:info_report([{'SPAWN:', Spawn}]),
+            error_logger:info_report([{'SPAWN:', Spawn}]),
             monitor_process(Pid),
             monitor(State);
-	
-        Other ->
-	    error_logger:info_report([{'OTHER:', Other}]),
+
+        _Ignored ->
             monitor(State)
     end.
 
@@ -142,18 +194,19 @@ monitor_process(Pid) when is_pid(Pid) ->
     case erlang:process_info(Pid) of
         undefined ->
             ignore;
-        
+
         Props ->
             {M, _F, _A} = proplists:get_value(current_function, Props, erlang),
             Attributes = M:module_info(attributes),
-            case proplists:get_value(subscribes, Attributes) of
+            case proplists:get_value(subscribe, Attributes) of
                 undefined ->
-		    error_logger:info_report([{subscribes, undefined}, {process, Pid}, {module, M}]),
                     ignore;
                 
+                [] ->
+                    ?MODULE ! {subscribe, Pid, [all]};
+                
                 Topics ->
-		    error_logger:info_report([{subscribes, Topics}, {process, Pid}, {module, M}]),
-                    ?MODULE ! {subscribe, Pid}
+                    ?MODULE ! {subscribe, Pid, Topics}
             end
     end.
 
