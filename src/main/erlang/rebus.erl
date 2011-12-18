@@ -141,27 +141,24 @@ add_to_subscriptions(_Pid, [], Subscriptions) ->
     Subscriptions;
 
 add_to_subscriptions(Pid, [Topic | Topics], Subscriptions) ->
-    NewSubscriptions = add_to_subscription(Pid, Topic, Subscriptions, []),
+    NewSubscriptions = add_to_subscription(Pid, Topic, Subscriptions),
     add_to_subscriptions(Pid, Topics, NewSubscriptions).
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
-add_to_subscription(Pid, Topic, [{Topic, Subscribers} | Subscriptions], Acc) ->    
+add_to_subscription(Pid, Topic, Subscriptions) ->    
     NewSubscriptions = 
         case proplists:get_value(Topic, Subscriptions) of
             undefined ->
                 Subscriptions ++ [{Topic, [Pid]}];
-            
+	    
             Subscribers ->
-                NewSubscription = TODO..... CONTIUNUE HERE....
-                Rest = proplists:remove
+                NewSubscription = {Topic, (Subscribers -- [Pid]) ++ [Pid]},
+                Rest = proplists:delete(Topic, Subscriptions),
+		Rest ++ [NewSubscription]
         end,
-    
-    add_to_subscription(Pid, Topic, Subscriptions, Acc ++ [NewSubscription]);
-
-add_to_subscription(Pid, Topic, [Other | Subscriptions], Acc) ->
-    add_to_subscription(Pid, Topic, Subscriptions, [Other | Acc]).
+    NewSubscriptions.
 
 %%--------------------------------------------------------------------
 %% @private
