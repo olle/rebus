@@ -10,8 +10,8 @@ start() ->
 stop(Pid) ->
     Pid ! {stop, self()},
     receive
-        State ->
-            {ok, State}
+        Result ->
+            Result
     end.
 
 loop() ->
@@ -21,6 +21,8 @@ loop(State) ->
     receive
         {stop, From} ->
             From ! State;
-        Message ->
-            loop([Message | State])
+        
+        Msg ->
+            error_logger:info_report([foobar, received, {message, Msg}]),
+            loop([Msg | State])
     end.

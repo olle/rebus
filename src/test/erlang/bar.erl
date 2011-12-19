@@ -3,15 +3,15 @@
          stop/1]).
 
 -subscribe([bar]).
-
+                                       
 start() ->
     spawn(fun loop/0).
 
 stop(Pid) ->
     Pid ! {stop, self()},
     receive
-        State ->
-            {ok, State}
+        Result ->
+            Result
     end.
 
 loop() ->
@@ -21,6 +21,8 @@ loop(State) ->
     receive
         {stop, From} ->
             From ! State;
-        Message ->
-            loop([Message | State])
+        
+        Msg ->
+            error_logger:info_report([bar, received, {message, Msg}]),
+            loop([Msg | State])
     end.

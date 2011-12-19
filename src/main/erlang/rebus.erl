@@ -11,15 +11,80 @@
 -export([start/0,
          stop/0,
          publish/1,
-         publish/2,
-         debug/0]).
+         publish/2]).
 
 -define(SLEEP(Millis), receive after Millis -> ok end).
+
+-type topic()        :: atom().
+-type message()      :: term().
+-type subscriber()   :: pid().
+-type subscription() :: {topic(), [pid()]}.
+
+-record(state, {
+          subscribers    = []        :: [subscriber()],
+          subscriptions  = []        :: [subscription()],
+          monitor        = undefined :: undefined | pid(),
+          starter        = undefined :: undefined | pid()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Starts the Rebus service, making it ready for pub/sub use.
+%% @end
+%%--------------------------------------------------------------------
+-spec start() ->
+                   ok.
+start() ->
+    register(?MODULE, spawn(fun rebus/0)),
+    ?MODULE ! {waiting, self()},
+    receive
+        ready ->
+            ok
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Stops the Rebus service, shutting down the pub/sub event bus.
+%% @end
+%%--------------------------------------------------------------------
+-spec stop() ->
+                  ok.
+stop() ->
+    ?MODULE ! {stop, self()},
+    ok.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Publishes the given `message' to all processes that are annotated
+%% with the module attribute `subscribes' and an empty list. This is
+%% simple global pub/sub.
+%% @end
+%%--------------------------------------------------------------------
+-spec publish(message()) ->
+                     ok.
+publish(Message) ->
+    ?MODULE ! {publish, Message},
+    ok.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Publishes the given message on the specified `topic' to processes
+%% that explicit declare this topic in their `subscribes' module
+%% attribute.
+%% @end
+%%--------------------------------------------------------------------
+-spec publish(topic(), message()) ->
+                     ok.
+publish(Topic, Message) ->
+    ?MODULE ! {publish, Topic, Message},
+    ok.
+
+%%--------------------------------------------------------------------
+%% @private
+%%--------------------------------------------------------------------
 debug() ->
     ?MODULE ! {debug, self()},
     receive
@@ -29,45 +94,6 @@ debug() ->
             {error, "No response"}
     end.
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the Rebus service.
-%% @end
-%%--------------------------------------------------------------------
-start() ->
-    register(?MODULE, spawn(fun rebus/0)),
-    ?SLEEP(10), %% try to align monitor and dispatching processes
-    ok.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Stops the Rebus service.
-%% @end
-%%--------------------------------------------------------------------
-stop() ->
-    ?MODULE ! {stop, self()},
-    ok.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Simply publishes the given `message' to all processes that are
-%% annotated with the module attribute `subscribes' and specified as
-%% an empty list.
-%% @end
-%%--------------------------------------------------------------------
-publish(Message) ->
-    ?MODULE ! {publish, Message}.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Publishes the given message on the specified `topic' to processes
-%% that explicit declare this topic in their `subscribes' module
-%% attribute.
-%% @end
-%%--------------------------------------------------------------------
-publish(Topic, Message) ->
-    ?MODULE ! {publish, Topic, Message}.
-
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
@@ -75,14 +101,16 @@ publish(Topic, Message) ->
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
+-spec rebus() ->
+                   ok.
 rebus() ->
     process_flag(sensitive, true),
-    spawn_link(fun monitor/0),
-    rebus([{subscribers, []}, {subscriptions, []}]).
+    Monitor = spawn_link(fun monitor/0),    
+    rebus(#state{monitor = Monitor}).
 
 %%--------------------------------------------------------------------
 %% @private
-%%--------------------------------------------------------------------
+%%--------------------------------------------------------------------                 
 rebus(State) ->
     receive
         {debug, From} ->
@@ -90,20 +118,25 @@ rebus(State) ->
             From ! {ok, State},
             rebus(State);
 
+        {waiting, From} ->
+            State#state.monitor ! {waiting, self()},
+            rebus(#state{starter = From});
+
+        ready ->
+            State#state.starter ! ready,
+            rebus(State);
+
         {stop, From} ->
-            error_logger:info_report([stop, {state, State}]),
             From ! {stopping, State};
 
         {publish, Message} ->
             error_logger:info_report([publish, {message, Message}, {state, State}]),
-            Subscribers = proplists:get_value(subscribers, State, []),
-            [Subscriber ! Message || Subscriber <- Subscribers],
+            [Subscriber ! Message || Subscriber <- State#state.subscribers],
             rebus(State);
 
         {publish, Topic, Message} ->
             error_logger:info_report([publish, {topic, Topic}, {message, Message}, {state, State}]),
-            Subscriptions = proplists:get_value(subscriptions, State, []),
-            Subscribers = proplists:get_value(Topic, Subscriptions, []),
+            Subscribers = proplists:get_value(Topic, State#state.subscriptions, []),
             [Subscriber ! {Topic, Message} || Subscriber <- Subscribers],
             rebus(State);
 
@@ -120,23 +153,27 @@ rebus(State) ->
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
-add_subscriber(Subscriber, Topics, State) ->
-    Subscribers = proplists:get_value(subscribers, State, []),
+-spec add_subscriber(subscriber(), [topic()], #state{}) ->
+                            #state{}.
+add_subscriber(Subscriber, Topics, #state{subscribers = Subscribers,
+                                          subscriptions = Subscriptions}) ->
     NewSubscribers = add_to_subscribers(Subscriber, Subscribers),
-
-    Subscriptions = proplists:get_value(subscriptions, State, []),
     NewSubscriptions = add_to_subscriptions(Subscriber, Topics, Subscriptions),
-    [{subscribers, NewSubscribers}, {subscriptions, NewSubscriptions}].
+    #state{subscribers = NewSubscribers, subscriptions = NewSubscriptions}.
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
+-spec add_to_subscribers(subscriber(), [subscriber()]) ->
+                                [subscriber()].
 add_to_subscribers(Pid, Pids) ->
     (Pids -- [Pid]) ++ [Pid].
 
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
+-spec add_to_subscriptions(subscriber(), [topic()], [subscription()]) ->
+                                  [subscription()].
 add_to_subscriptions(_Pid, [], Subscriptions) ->
     Subscriptions;
 
@@ -147,18 +184,18 @@ add_to_subscriptions(Pid, [Topic | Topics], Subscriptions) ->
 %%--------------------------------------------------------------------
 %% @private
 %%--------------------------------------------------------------------
+-spec add_to_subscription(subscriber(), topic(), [subscription()]) ->
+                                 [subscription()].
 add_to_subscription(Pid, Topic, Subscriptions) ->    
-    NewSubscriptions = 
-        case proplists:get_value(Topic, Subscriptions) of
-            undefined ->
-                Subscriptions ++ [{Topic, [Pid]}];
-	    
-            Subscribers ->
-                NewSubscription = {Topic, (Subscribers -- [Pid]) ++ [Pid]},
-                Rest = proplists:delete(Topic, Subscriptions),
-		Rest ++ [NewSubscription]
-        end,
-    NewSubscriptions.
+    case proplists:get_value(Topic, Subscriptions) of
+        undefined ->
+            Subscriptions ++ [{Topic, [Pid]}];
+        
+        Subscribers ->
+            NewSubscription = {Topic, (Subscribers -- [Pid]) ++ [Pid]},
+            Rest = proplists:delete(Topic, Subscriptions),
+            Rest ++ [NewSubscription]
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -175,8 +212,11 @@ monitor() ->
 %%--------------------------------------------------------------------
 monitor(State) ->
     receive
-        Spawn = {trace, _, spawn, Pid, _} ->
-            error_logger:info_report([{'SPAWN:', Spawn}]),
+        {waiting, From} ->
+            From ! ready,
+            monitor(State);
+        
+        {trace, _, spawn, Pid, _} ->
             monitor_process(Pid),
             monitor(State);
 
@@ -198,11 +238,13 @@ monitor_process(Pid) when is_pid(Pid) ->
             case proplists:get_value(subscribe, Attributes) of
                 undefined ->
                     ignore;
-                
+
                 [] ->
+                    error_logger:info_report([spawned, {module, M}, {process, Pid}, {topics, all}]),
                     ?MODULE ! {subscribe, Pid, [all]};
-                
+
                 Topics ->
+                    error_logger:info_report([spawned, {module, M}, {process, Pid}, {topics, Topics}]),
                     ?MODULE ! {subscribe, Pid, Topics}
             end
     end.

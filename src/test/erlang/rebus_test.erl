@@ -50,10 +50,9 @@ lifecycle_test() ->
     Foo = foo:start(),
     Bar = bar:start(),
     Foobar = foobar:start(),
-
-    %% Listeners are added asynchronously, so in tests we must compensate
-    ?SLEEP(1),
-    rebus:debug(),
+    
+    %% Test listeners spawn their own processes, we give them some time to start...
+    ?SLEEP(1000),
 
     rebus:publish(foo, message),
     rebus:publish(void, message),
@@ -61,19 +60,11 @@ lifecycle_test() ->
     rebus:publish(void, message),
     rebus:publish(message),
 
-    %% Message dispatching is asynchronous too, so in tests we compensate again
-    ?SLEEP(1),
+    ?SLEEP(1000),
 
-    %% Our listeners save their messages LIFO
-
-    ?assertMatch({ok, [message, {foo, message}]},
-		 foo:stop(Foo)),
-
-    ?assertMatch({ok, [message, {bar, message}]},
-		 bar:stop(Bar)),
-
-    ?assertMatch({ok, [message, {bar, message}, {foo, message}]},
-		 foobar:stop(Foobar)),
+    ?assertMatch([message, {foo, message}], foo:stop(Foo)),
+    ?assertMatch([message, {bar, message}], bar:stop(Bar)),
+    ?assertMatch([message, {bar, message}, {foo, message}], foobar:stop(Foobar)),
 
     ?assertMatch(ok, rebus:stop()).
 
