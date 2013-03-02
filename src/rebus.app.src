@@ -1,0 +1,10 @@
+{application, rebus,
+  [{description, "A stupid simple, internal, pub/sub event bus."},
+   {id, rebus},
+   {vsn, "0.9.0"},
+   {modules, []},
+   {maxT, infinity},
+   {included_applications, []},
+   {applications, [kernel, stdlib]},
+   {env, []},
+   {start_phases, []}]}.
