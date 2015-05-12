@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/olle/rebus.svg)](https://travis-ci.org/olle/rebus)
+
 Rebus
 =====
 
@@ -102,5 +104,5 @@ This project is now using `rebar` as build and test-tool. There are even some
 EUnit tests. Please, go ahead.
 
     rebar clean compile eunit
-    
+
 Good luck!
