@@ -5,7 +5,7 @@
 %%% Rebus is a plain-old-erlang service that allows for stupid simple internal
 %%% Erlang pub/sub messaging - it does not get simpler than this.
 %%%
-%%% First, a very simple public interface for publishing: `publish/1' and 
+%%% First, a very simple public interface for publishing: `publish/1' and
 %%% `publish/2'. Subscribing is also very easy, just annotate any module with
 %%% the attribute `-subscribe' and all it's spawned processes will receive
 %%% published messages.
@@ -44,8 +44,13 @@
 %% Public API
 -export([start/0,
          stop/0,
-         publish/1, pub/1,
-         publish/2, pub/2]).
+         publish/1,
+         publish/2]).
+
+%% Sadly, I think this is a bit smelly.
+-ifdef(TEST).
+-compile(export_all).
+-endif.
 
 -define(SLEEP(Millis), receive after Millis -> ok end).
 
@@ -54,10 +59,11 @@
 -type subscriber()   :: pid().
 -type subscription() :: {topic(), [pid()]}.
 
--record(state, { subscribers    = []        :: [subscriber()],
-		 subscriptions  = []        :: [subscription()],
-		 tracer         = undefined :: undefined | pid(),
-		 starter        = undefined :: undefined | pid() }).
+-record(state, {
+          subscribers    = []        :: [subscriber()],
+          subscriptions  = []        :: [subscription()],
+          tracer         = undefined :: undefined | pid(),
+          starter        = undefined :: undefined | pid()}).
 
 -define(SERVER, ?MODULE).
 
@@ -93,7 +99,6 @@ stop() ->
 	    ok
     end.
 
-
 %%------------------------------------------------------------------------------
 %% @doc
 %% Publishes the given `message' to all processes that are annotated
@@ -101,9 +106,6 @@ stop() ->
 %% simple global pub/sub.
 %% @end
 %%------------------------------------------------------------------------------
-pub(Message) ->
-    publish(Message).
-
 -spec publish(message()) ->
                      ok.
 publish(Message) ->
@@ -117,9 +119,6 @@ publish(Message) ->
 %% attribute.
 %% @end
 %%------------------------------------------------------------------------------
-pub(Topic, Message) ->
-    publish(Topic, Message).
-
 -spec publish(topic(), message()) ->
                      ok.
 publish(Topic, Message) ->
@@ -129,6 +128,7 @@ publish(Topic, Message) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
+-ifdef(DEBUG).
 debug() ->
     ?SERVER ! {debug, self()},
     receive
@@ -137,6 +137,7 @@ debug() ->
     after 100 ->
             {error, "No response"}
     end.
+-endif.
 
 %%%=============================================================================
 %%% Internal functions
@@ -178,15 +179,15 @@ rebus(State) ->
 	    end;
 
         {publish, Message} ->
-            error_logger:info_report([publish, 
-				      {message, Message}, 
+            error_logger:info_report([publish,
+				      {message, Message},
 				      {state, State}]),
             [Subscriber ! Message || Subscriber <- State#state.subscribers],
             rebus(State);
 
         {publish, Topic, Message} ->
-            error_logger:info_report([publish, 
-				      {topic, Topic}, 
+            error_logger:info_report([publish,
+				      {topic, Topic},
 				      {message, Message},
 				      {state, State}]),
             Subscribers = proplists:get_value(Topic, State#state.subscriptions, []),
@@ -194,16 +195,16 @@ rebus(State) ->
             rebus(State);
 
         {subscribe, Process, Topics} ->
-            error_logger:info_report([subscribe, 
-				      {process, Process}, 
-				      {topics, Topics}, 
+            error_logger:info_report([subscribe,
+				      {process, Process},
+				      {topics, Topics},
 				      {state, State}]),
             NewState = add_subscriber(Process, Topics, State),
             rebus(NewState);
 
 	{unsubscribe, Process} ->
-	    error_logger:info_report([unsubscribe, 
-				      {process, Process}, 
+	    error_logger:info_report([unsubscribe,
+				      {process, Process},
 				      {state, State}]),
 	    NewState = remove_subscriber(Process, State),
 	    rebus(NewState);
@@ -254,7 +255,7 @@ add_to_subscriptions(Pid, [Topic | Topics], Subscriptions) ->
 %%------------------------------------------------------------------------------
 -spec add_to_subscription(subscriber(), topic(), [subscription()]) ->
                                  [subscription()].
-add_to_subscription(Pid, Topic, Subscriptions) ->    
+add_to_subscription(Pid, Topic, Subscriptions) ->
     case proplists:get_value(Topic, Subscriptions) of
         undefined ->
             Subscriptions ++ [{Topic, [Pid]}];
@@ -327,17 +328,17 @@ tracer(State) ->
 	    case get_topics(Pid) of
 		undefined ->
 		    tracer(State);
-		
+
 		Topics ->
 		    erlang:monitor(process, Pid),
 		    ?SERVER ! {subscribe, Pid, Topics},
 		    tracer(State)
 	    end;
-	
+
 	{'DOWN', _, process, Pid, _} ->
 	    ?SERVER ! {unsubscribe, Pid},
 	    tracer(State);
-	
+
 	Other ->
 	    error_logger:info_report([tracer, other, {message, Other}]),
             tracer(State)
@@ -350,19 +351,18 @@ get_topics(Pid) when is_pid(Pid) ->
     case erlang:process_info(Pid) of
         undefined ->
             undefined;
-	
+
         Props ->
             {M, _F, _A} = proplists:get_value(current_function, Props, erlang),
             Attributes = M:module_info(attributes),
             case proplists:get_value(subscribe, Attributes) of
                 undefined ->
                     undefined;
-		
+
                 [] ->
 		    [all];
-		
+
                 Topics ->
 		    Topics
             end
     end.
-

@@ -1,0 +1,110 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Module rebus</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module rebus</h1>
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>   
+Rebus is a plain-old-erlang service that allows for stupid simple internal   
+Erlang pub/sub messaging - it does not get simpler than this.
+<p>Copyright © (C) 2011, Olle Törnström</p>
+
+<p><b>Authors:</b> Olle Törnström (<a href="mailto:olle@studiomediatech.com"><tt>olle@studiomediatech.com</tt></a>).</p>
+
+<h2><a name="description">Description</a></h2><p>   
+Rebus is a plain-old-erlang service that allows for stupid simple internal   
+Erlang pub/sub messaging - it does not get simpler than this.</p>
+  
+   <p>First, a very simple public interface for publishing: <code>publish/1</code> and
+   <code>publish/2</code>. Subscribing is also very easy, just annotate any module with
+   the attribute <code>-subscribe</code> and all it's spawned processes will receive   
+published messages.</p>
+  
+   <p>The Rebus service is built to use two services, one to monitor process   
+spawning and another to manage message notification. Start the Rebus   
+service like this:</p>
+  
+   <pre>     rebus:start().</pre>
+  
+   <p>It will start the Rebus processes and register the service's internal
+   interface with the name <code>rebus</code>. Pleas note, this is only for internal   
+messaging and users should always use the public APIs.</p>
+  
+   <p>In order to keep some level of control of who's receiveing what, a simple
+   concept of topics are used by publishers and receivers. So message sending
+   is either done globally, or with a specified <code>topic</code>.</p>
+  
+   <pre>     rebus:publish(gold, "This is gold leader, stay in formation, over."),
+     rebus:publish(red, "This is red leader, prepare to engage."),
+     rebus:publish("Look at the size of that thing!").</pre>
+  
+   Notice the two first messages being published to the topics <code>gold</code> and <code>red</code>
+   respectively. Here only processes subscribing to those topics will get
+   notified. The last, message on the other hand, will be notified to all
+   processes annotated with the <code>-subscribe</code> attribute, even those subscribing
+   to just an empty list.
+<h2><a name="types">Data Types</a></h2>
+
+<h3 class="typedecl"><a name="type-message">message()</a></h3>
+<p><tt>message() = term()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-topic">topic()</a></h3>
+<p><tt>topic() = atom()</tt></p>
+
+
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#publish-1">publish/1</a></td><td>
+  Publishes the given <code>message</code> to all processes that are annotated
+  with the module attribute <code>subscribes</code> and an empty list.</td></tr>
+<tr><td valign="top"><a href="#publish-2">publish/2</a></td><td>
+  Publishes the given message on the specified <code>topic</code> to processes
+  that explicit declare this topic in their <code>subscribes</code> module
+  attribute.</td></tr>
+<tr><td valign="top"><a href="#start-0">start/0</a></td><td>
+  Starts the Rebus service, making it ready for pub/sub use.</td></tr>
+<tr><td valign="top"><a href="#stop-0">stop/0</a></td><td>
+  Stops the Rebus service, shutting down the pub/sub event bus.</td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="publish-1">publish/1</a></h3>
+<div class="spec">
+<p><tt>publish(Message::<a href="#type-message">message()</a>) -&gt; ok</tt><br></p>
+</div><p>
+  Publishes the given <code>message</code> to all processes that are annotated
+  with the module attribute <code>subscribes</code> and an empty list. This is
+  simple global pub/sub.</p>
+
+<h3 class="function"><a name="publish-2">publish/2</a></h3>
+<div class="spec">
+<p><tt>publish(Topic::<a href="#type-topic">topic()</a>, Message::<a href="#type-message">message()</a>) -&gt; ok</tt><br></p>
+</div><p>
+  Publishes the given message on the specified <code>topic</code> to processes
+  that explicit declare this topic in their <code>subscribes</code> module
+  attribute.</p>
+
+<h3 class="function"><a name="start-0">start/0</a></h3>
+<div class="spec">
+<p><tt>start() -&gt; ok</tt><br></p>
+</div><p>
+  Starts the Rebus service, making it ready for pub/sub use.</p>
+
+<h3 class="function"><a name="stop-0">stop/0</a></h3>
+<div class="spec">
+<p><tt>stop() -&gt; ok</tt><br></p>
+</div><p>
+  Stops the Rebus service, shutting down the pub/sub event bus.</p>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc, May 12 2015, 22:31:35.</i></p>
+</body>
+</html>

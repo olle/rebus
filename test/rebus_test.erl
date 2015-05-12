@@ -1,9 +1,6 @@
 %%%-------------------------------------------------------------------
 %%% @author Olle Törnström <olle@studiomediatech.com>
 %%% @copyright (C) 2011, Olle Törnström
-%%% @doc
-%%% TODO:
-%%% @end
 %%%-------------------------------------------------------------------
 -module(rebus_test).
 
@@ -12,13 +9,13 @@
 -define(SLEEP(Millis), receive after Millis -> ok end).
 
 add_to_subscribers_test() ->
-    ?assertMatch([1],
+   ?assertMatch([1],
 		 rebus:add_to_subscribers(1, [])),
-    ?assertMatch([1, 2],
+   ?assertMatch([1, 2],
 		 rebus:add_to_subscribers(2, [1])),
-    ?assertMatch([1, 2, 3],
+   ?assertMatch([1, 2, 3],
 		 rebus:add_to_subscribers(3, [1, 2])),
-    ?assertMatch([2, 3, 1],
+   ?assertMatch([2, 3, 1],
 		 rebus:add_to_subscribers(1, [1, 2, 3])).
 
 add_to_subscription_test() ->
@@ -49,7 +46,7 @@ remove_from_subscribers_test() ->
     ?assertMatch([2, 3],
 		 rebus:remove_from_subscribers(1, [1, 2, 3])),
     ?assertMatch([3],
-		 rebus:remove_from_subscribers(2, [2, 3])),    
+		 rebus:remove_from_subscribers(2, [2, 3])),
     ?assertMatch([],
 		 rebus:remove_from_subscribers(3, [3])).
 
@@ -59,7 +56,7 @@ lifecycle_test() ->
     Foo = foo:start(),
     Bar = bar:start(),
     Foobar = foobar:start(),
-    
+
     %% Test listeners spawn their own processes, we give them some time to start...
     ?SLEEP(1000),
 
@@ -76,4 +73,3 @@ lifecycle_test() ->
     ?assertMatch([message, {bar, message}, {foo, message}], foobar:stop(Foobar)),
 
     ?assertMatch(ok, rebus:stop()).
-

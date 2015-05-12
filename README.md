@@ -95,3 +95,12 @@ interest gather a little momentum for further development.
 This means **you can help**. Just fork the git repository and hack away. I'll
 be glad to merge any changes and solutions that keep to the original idea of
 building a stupid simple internal pub/sub solution for Erlang.
+
+## Getting started!
+
+This project is now using `rebar` as build and test-tool. There are even some
+EUnit tests. Please, go ahead.
+
+    rebar clean compile eunit
+    
+Good luck!
